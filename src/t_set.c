@@ -196,6 +196,35 @@ void saddCommand(redisClient *c) {
     }
 }
 
+void sinitCommand(redisClient *c) {
+    robj *set;
+    size_t size;
+    int j;
+
+    set = lookupKeyWrite(c->db,c->argv[1]);
+    // Applicable only on empty keys
+    if (set != NULL) {
+        addReply(c,shared.wrongtypeerr);
+        return;
+    }
+
+    size = c->argc-2;
+    // Skipping intset optimization
+    set = createSetObject();
+    dbAdd(c->db,c->argv[1],set);
+    dictExpand(set->ptr, size);
+    
+    for(j=2;j < c->argc; j++) {
+        setTypeAdd(set, c->argv[j]);
+    }
+
+    touchWatchedKey(c->db,c->argv[1]);
+    server.dirty++;
+
+    // Returns the actual number of inserted elements (=skips dups)
+    addReplyLongLong(c,setTypeSize(set));
+}
+
 void sremCommand(redisClient *c) {
     robj *set;
 
