@@ -27,7 +27,7 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
-#define REDIS_VERSION "2.0.3"
+#define REDIS_VERSION "2.0.3.sinit"
 
 #include "fmacros.h"
 #include "config.h"
@@ -672,6 +672,7 @@ static void ltrimCommand(redisClient *c);
 static void typeCommand(redisClient *c);
 static void lsetCommand(redisClient *c);
 static void saddCommand(redisClient *c);
+static void sinitCommand(redisClient *c);
 static void sremCommand(redisClient *c);
 static void smoveCommand(redisClient *c);
 static void sismemberCommand(redisClient *c);
@@ -772,6 +773,7 @@ static struct redisCommand cmdTable[] = {
     {"lrem",lremCommand,4,REDIS_CMD_BULK,NULL,1,1,1},
     {"rpoplpush",rpoplpushcommand,3,REDIS_CMD_INLINE|REDIS_CMD_DENYOOM,NULL,1,2,1},
     {"sadd",saddCommand,3,REDIS_CMD_BULK|REDIS_CMD_DENYOOM,NULL,1,1,1},
+    {"sinit",sinitCommand,-3,REDIS_CMD_INLINE,NULL,1,1,1},
     {"srem",sremCommand,3,REDIS_CMD_BULK,NULL,1,1,1},
     {"smove",smoveCommand,4,REDIS_CMD_BULK,NULL,1,2,1},
     {"sismember",sismemberCommand,3,REDIS_CMD_BULK,NULL,1,1,1},
@@ -5105,6 +5107,35 @@ static void saddCommand(redisClient *c) {
     } else {
         addReply(c,shared.czero);
     }
+}
+
+void sinitCommand(redisClient *c) {
+    robj *set;
+    size_t size;
+    int j;
+
+    set = lookupKeyWrite(c->db,c->argv[1]);
+    // Applicable only on empty keys
+    if (set != NULL) {
+        addReply(c,shared.wrongtypeerr);
+        return;
+    }
+
+    size = c->argc-2;
+    set = createSetObject();
+    dictAdd(c->db->dict,c->argv[1],set);
+    incrRefCount(c->argv[1]);
+    dictExpand(set->ptr, size);
+
+    for(j=2;j < c->argc; j++) {
+        dictAdd(set->ptr,c->argv[j],NULL);
+        // We are sure that the key doesn't exist, so we incr ref count
+        incrRefCount(c->argv[j]);
+    }
+
+    server.dirty++;
+    // Returns the actual number of inserted elements (=skips dups)
+    addReplyUlong(c,dictSize((dict*)set->ptr));
 }
 
 static void sremCommand(redisClient *c) {
